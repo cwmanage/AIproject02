@@ -40,6 +40,7 @@ PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 # 标记"项目已初始化"的文件 -> 可以跳过耗时的步骤
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 METRICS_CSV = OUTPUTS_DIR / "csv" / "metrics_all_models.csv"
+DL_METRICS_CSV = OUTPUTS_DIR / "csv" / "dl_metrics.csv"      # 深度学习产物标记
 
 HOST = os.environ.get("TITANIC_HOST", "127.0.0.1")
 PORT = int(os.environ.get("TITANIC_PORT", "8000"))
@@ -146,12 +147,23 @@ def install_dependencies(python: Path) -> None:
 
 
 def train_if_needed(python: Path) -> None:
-    """首次启动时跑完整流程(图 + 模型 + CSV)。"""
+    """首次启动时跑完整流程(图 + 模型 + CSV)。
+
+    分两部分，各自独立判断：
+      * 传统机器学习(四个模型) -> python -m titanic.train
+      * 深度学习(PyTorch MLP)   -> python -m titanic.deep_learning
+    """
     if METRICS_CSV.exists():
-        log("Training artifacts already present in outputs/ -> skipping training.")
-        return
-    log("No training artifacts found -> running `python -m titanic.train` ...")
-    run([str(python), "-m", "titanic.train"])
+        log("ML artifacts already present in outputs/ -> skipping ML training.")
+    else:
+        log("No ML artifacts found -> running `python -m titanic.train` ...")
+        run([str(python), "-m", "titanic.train"])
+
+    if DL_METRICS_CSV.exists():
+        log("DL (PyTorch MLP) artifacts already present -> skipping DL training.")
+    else:
+        log("No DL artifacts found -> running `python -m titanic.deep_learning` ...")
+        run([str(python), "-m", "titanic.deep_learning"])
 
 
 def wait_for_server(url: str, timeout: float = 30.0) -> bool:

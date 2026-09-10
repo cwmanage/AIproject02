@@ -1,6 +1,7 @@
 # 🚢 Titanic 乘客生还预测 — 启动步骤
 
-> 技术栈：Python 3.12+ · FastAPI · Scikit-learn · Matplotlib · uv
+> 技术栈：Python 3.12+ · FastAPI · Scikit-learn · **PyTorch** · Matplotlib · uv
+> **主页 = 深度学习（PyTorch MLP）**；传统机器学习页在 `/ml`，顶部按钮互相切换
 > 界面语言：中英文一键切换（默认英文，右上角切换）
 
 ---
@@ -10,7 +11,7 @@
 **Windows**：双击 `start.bat`，或在 PowerShell/CMD 中：
 
 ```powershell
-cd 项目解压目录        # 例如 cd D:\yourpath\AIproject01
+cd 项目解压目录        # 例如 cd D:\yourpath\AIproject02
 python start.py
 ```
 
@@ -25,9 +26,10 @@ chmod +x start.sh        # 首次执行一次
 `start.py` 会自动完成（幂等，可反复运行）：
 1. 检查 Python 版本（新建虚拟环境时需 **3.12+**）
 2. 创建/复用 `.venv` 虚拟环境
-3. 用 `uv sync` 安装全部依赖
-4. 若 `outputs/` 无训练产物 → 自动运行 `python -m titanic.train`（出图+训练+CSV）
-5. 启动 FastAPI 服务器并等待就绪
+3. 用 `uv sync` 安装全部依赖（含 CPU 版 torch）
+4. 若 `outputs/` 无训练产物 → 自动运行 `python -m titanic.train`（4 模型，出图+训练+CSV）
+5. 若无深度学习产物 → 自动运行 `python -m titanic.deep_learning`（PyTorch MLP 训练 + 出图）
+6. 启动 FastAPI 服务器并等待就绪
 
 启动成功后浏览器访问：**http://127.0.0.1:8000**
 
@@ -48,12 +50,18 @@ uv sync
 # 或
 .\.venv\Scripts\python -m pip install -r requirements.txt
 
-# 3) 训练四模型 + 生成 6 张图 + 输出对比 CSV
+# 3) 训练四传统模型 + 生成 6 张图 + 输出对比 CSV
 .\.venv\Scripts\python -m titanic.train
+
+# 3b) 训练 PyTorch 深度学习模型（MLP）+ 生成 6 张图 + 输出指标 CSV
+.\.venv\Scripts\python -m titanic.deep_learning
 
 # 4) 启动 Web 服务
 .\.venv\Scripts\python -m uvicorn app:app --host 127.0.0.1 --port 8000 --reload
 ```
+
+> torch 安装说明：本项目用 **CPU 版**（`UV_TORCH_BACKEND=cpu`，无显卡也能跑）。
+> 若 `uv sync` 拉取过慢，可先设 `$env:UV_TORCH_BACKEND="cpu"` 再执行；课堂演示 CPU 足够。
 
 > 注意：所有命令用 `.venv\Scripts\python.exe`（Windows）或 `.venv/bin/python`（macOS/Linux）。
 > 直接敲 `python` 可能命中系统旧版本而非项目 3.12。
@@ -64,14 +72,19 @@ uv sync
 
 | 入口 | 说明 |
 |---|---|
-| **http://127.0.0.1:8000** | 演示主页：6 张数据可视化图 + 四模型指标对比表 + 交互式乘客预测表单 + 测试集 179 人真实vs预测表 + API 速查 |
-| **http://127.0.0.1:8000/?lang=zh** | 中文界面版（也可点页面右上角按钮切换） |
+| **http://127.0.0.1:8000** | **主页 = 深度学习页（PyTorch MLP）**：训练/验证曲线 + 混淆矩阵 + ROC + 概率分布 + 六模型对比图 + MLP 实时预测 + 测试集对比表 |
+| **http://127.0.0.1:8000/ml** | 机器学习页：6 张数据可视化图 + 四模型指标对比表 + 交互式乘客预测表单 + 测试集 179 人真实vs预测表 + API 速查 |
+| **http://127.0.0.1:8000/?lang=zh** | 中文界面版（主页中文；也可点页面右上角按钮切换；两种模式共用语言设置） |
+| **顶部按钮** | 在「🧮 机器学习(四模型)」与「🧠 深度学习(PyTorch MLP)」两页间切换 |
 | **http://127.0.0.1:8000/docs** | Swagger 交互式 API 文档（可在线测试每个接口） |
 | **http://127.0.0.1:8000/redoc** | ReDoc 版 API 文档 |
 | **http://127.0.0.1:8000/api/health** | 健康检查 `{"status":"ok"}` |
 | **http://127.0.0.1:8000/api/summary** | 四模型全部指标 + 图表清单 JSON |
-| **http://127.0.0.1:8000/api/predictions?model=svm** | 测试集对比（换 logistic/decision_tree/random_forest/best 均可） |
-| **GET /api/predict?pclass=1&sex=female&age=30&fare=80&embarked=C** | 填参数预测生还 |
+| **http://127.0.0.1:8000/api/predictions?model=svm** | 传统模型测试集对比（换 logistic/decision_tree/random_forest/best 均可） |
+| **http://127.0.0.1:8000/api/dl/summary** | MLP 指标 + 超参 + 训练历史 JSON |
+| **http://127.0.0.1:8000/api/dl/predictions** | MLP 测试集 179 人真实vs预测 |
+| **GET/POST /api/dl/predict** | MLP 实时预测（字段同 /api/predict） |
+| **http://127.0.0.1:8000/deep** | 旧链接，307 重定向到主页 `/`（为保证兼容保留） |
 
 ### 预测接口 POST 示例（JSON）
 
@@ -102,7 +115,10 @@ curl -X POST http://127.0.0.1:8000/api/predict ^
 # 单独重新出图（不重训模型）
 .\.venv\Scripts\python -c "from titanic.visualize import generate_all; generate_all()"
 
-# API 冒烟测试 + 页面双语回归（需服务已启动；EN/ZH 全量断言）
+# 单独重训深度学习模型（MLP，固定种子 -> 结果可复现）
+.\.venv\Scripts\python -m titanic.deep_learning
+
+# API 冒烟测试 + 页面双语回归（需服务已启动；ML+DL 全量断言）
 .\.venv\Scripts\python smoke_test.py
 
 
@@ -136,6 +152,25 @@ Get-NetTCPConnection -LocalPort 8000 -State Listen | ForEach-Object { Stop-Proce
 
 **Q7：想重新训练 / 重置结果？**
 → 删除 `outputs/` 与 `models/` 目录后重新运行 start.py（自动重建，随机种子 42 结果一致）。
+   深度学习产物在 `outputs/dl_figures/`、`outputs/csv/dl_metrics.csv`、`outputs/csv/dl_training_history.csv`、`outputs/csv/dl_test_predictions.csv`、`models/best_titanic_mlp.pt`。
+
+**Q8：深度学习页报错 / 无图？**
+→ 先运行 `python -m titanic.deep_learning` 生成产物；确认 `.venv` 里已装 torch（`python -c "import torch"`）。
+
+---
+
+## 两种训练方式的对照
+
+| 维度 | 机器学习（`/ml`） | 深度学习（主页 `/`） |
+|---|---|---|
+| 模型 | 逻辑回归 / SVM / 决策树 / 随机森林 | PyTorch MLP（12→64→32→2，2978 参数） |
+| 划分 | 891 → 712 train / 179 test（80/20, seed=42） | 891 → 569 train / 143 val / 179 test |
+| 输入特征 | 12 维（预处理后，同 DL） | 12 维 |
+| 损失/优化 | 各模型自带 | CrossEntropyLoss + Adam(lr=1e-3, wd=1e-4) |
+| 训练轮数 | 一次性拟合 | 80 epochs，batch=32 |
+| 结果 | SVM 最优 acc=0.8156 | MLP acc=0.8101 / AUC=0.8484 |
+
+> 两者**测试集完全相同**（都用 random_state=42 分层划分），可直接对比。
 
 ---
 
@@ -143,12 +178,16 @@ Get-NetTCPConnection -LocalPort 8000 -State Listen | ForEach-Object { Stop-Proce
 
 | 产物 | 位置 |
 |---|---|
-| 6 张可视化图（中英双语标注） | `outputs\figures\1~6_*.png` |
+| 6 张 ML 可视化图（中英双语标注） | `outputs\figures\1~6_*.png`（含 7_model_comparison、8_roc_curves） |
 | 四模型指标汇总 | `outputs\csv\metrics_all_models.csv` |
 | 各模型测试集预测对比 | `outputs\csv\predictions_{logistic,svm,decision_tree,random_forest}.csv` |
 | 最优模型预测 CSV | `outputs\csv\test_predictions_best.csv` |
 | 序列化模型 | `models\pipeline_*.joblib`（4 个）+ `preprocessor.joblib` |
-| Web 演示 | 本机 http://127.0.0.1:8000 |
+| **深度学习 6 张图** | `outputs\dl_figures\01~06_*.png` |
+| **MLP 指标 + 训练历史** | `outputs\csv\dl_metrics.csv`、`outputs\csv\dl_training_history.csv` |
+| **MLP 测试集预测** | `outputs\csv\dl_test_predictions.csv` |
+| **MLP 权重** | `models\best_titanic_mlp.pt` |
+| Web 演示 | 本机 http://127.0.0.1:8000 （主页=深度学习，/ml=机器学习） |
 
 > 测试集 179 行（891×20%），CSV 含 PassengerId / Survived_true / Survived_pred，
 > 与 PassengerId 一一对应可回溯原乘客。

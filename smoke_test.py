@@ -16,10 +16,10 @@ def get(path):
         return r.status, r.read()
 
 
-# ---- 英文页(默认) --------------------------------------------------------
-status, body = get("/")
+# ---- 机器学习页(默认语言) ------------------------------------------------
+status, body = get("/ml")
 html = body.decode("utf-8")
-print("EN index status:", status, "len:", len(html))
+print("EN /ml (machine learning) status:", status, "len:", len(html))
 for kw in [
     "Support Vector Machine",   # 指标表里的模型名
     "Try a Prediction",         # 预测按钮
@@ -29,13 +29,14 @@ for kw in [
     "Service health check",     # API 说明表
     "Scikit-learn",             # 页脚
     "langBtn",                  # 语言切换按钮
+    "/?lang=",                  # 顶部模式切换按钮指回主页(深度学习)
 ]:
-    print("EN", repr(kw), "->", kw in html)
+    print("EN ml", repr(kw), "->", kw in html)
 
-# ---- 中文页 --------------------------------------------------------------
-status, body = get("/?lang=zh")
+# ---- 机器学习页(中文) ----------------------------------------------------
+status, body = get("/ml?lang=zh")
 zh = body.decode("utf-8")
-print("ZH index status:", status, "len:", len(zh))
+print("ZH /ml status:", status, "len:", len(zh))
 for kw in [
     "泰坦尼克号生还预测",   # 页面标题
     "数据可视化",          # 导航链接
@@ -50,8 +51,20 @@ for kw in [
 ]:
     print("ZH", repr(kw), "->", kw in zh)
 
-# ---- 两种页面都要有语言切换按钮 ----------------------------------------
 print("lang button on EN:", "langBtn" in html, "| on ZH:", "langBtn" in zh)
+
+# ---- /deep 旧链接应 307 重定向到主页 --------------------------------------
+import urllib.error
+req = urllib.request.Request(BASE + "/deep", method="GET")
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):
+        return None
+try:
+    urllib.request.build_opener(_NoRedirect).open(req, timeout=10)
+    print("/deep redirect: NO redirect (unexpected)")
+except urllib.error.HTTPError as e:
+    loc = e.headers.get("Location", "")
+    print("/deep redirect:", e.code, "->", loc)
 
 # ---- 图表(8 张双语 PNG) -------------------------------------------------
 print("img tags:", zh.count('<img src="/figures/'))
@@ -70,4 +83,41 @@ status, body = get("/api/predict?Pclass=1&Sex=female&Age=25&Fare=110&Embarked=C"
 j = json.loads(body.decode("utf-8"))
 print("predict GET:", status, j["prediction_text"], "prob:", j["survived_probability"])
 print("docs status:", get("/docs")[0])
+
+# ==========================================================================
+#  深度学习(PyTorch MLP)部分
+# ==========================================================================
+# ---- 深度学习页(现在是主页 /) -----------------------------------------
+status, body = get("/")
+dl_en = body.decode("utf-8")
+print("EN / (deep learning home) status:", status, "len:", len(dl_en))
+for kw in ["Deep Learning", "Training Curves", "PyTorch MLP",
+           "Machine Learning (4 models)", "langBtn", "/ml?lang="]:
+    print("EN deep-home", repr(kw), "->", kw in dl_en)
+
+status, body = get("/?lang=zh")
+dl_zh = body.decode("utf-8")
+print("ZH / status:", status, "len:", len(dl_zh))
+for kw in ["深度学习", "训练曲线", "机器学习", "测试集", "超参数"]:
+    print("ZH deep", repr(kw), "->", kw in dl_zh)
+
+# ---- 深度学习图(6 张) ---------------------------------------------------
+print("dl img tags:", dl_zh.count('<img src="/dl_figures/'))
+status, body = get("/dl_figures/01_loss_curve.png")
+print("dl png status:", status, "bytes:", len(body))
+
+# ---- 深度学习 API -------------------------------------------------------
+status, body = get("/api/dl/summary")
+meta = json.loads(body.decode("utf-8"))
+print("dl summary:", status, "metrics:", meta["metrics"],
+      "params:", meta.get("n_params"), "hist_len:", len(meta.get("history", [])))
+
+status, body = get("/api/dl/predictions")
+rows = json.loads(body.decode("utf-8"))
+print("dl predictions:", status, "rows:", len(rows))
+
+status, body = get("/api/dl/predict?Pclass=1&Sex=female&Age=29&Fare=110&Embarked=C")
+j = json.loads(body.decode("utf-8"))
+print("dl predict GET:", status, j["prediction_text"], "prob:", j["survived_probability"])
+
 print("SMOKE TEST DONE")

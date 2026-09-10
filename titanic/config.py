@@ -9,7 +9,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # 项目目录(基于本文件位置解析 -> 放到任何电脑都能运行)
 # ---------------------------------------------------------------------------
-# 项目根目录: .../AIproject01
+# 项目根目录: .../AIproject02
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # 原始输入数据
@@ -18,8 +18,9 @@ DATA_PATH = DATA_DIR / "titanic.csv"
 
 # 所有生成产物(图 + CSV 结果)都输出到 outputs/
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
-FIG_DIR = OUTPUT_DIR / "figures"      # 可视化图片
+FIG_DIR = OUTPUT_DIR / "figures"      # 传统机器学习可视化图片
 CSV_DIR = OUTPUT_DIR / "csv"          # 预测/指标结果表格
+DL_FIG_DIR = OUTPUT_DIR / "dl_figures"  # 深度学习(PyTorch MLP)结果图
 
 # Web 静态资源(FastAPI 使用)
 STATIC_DIR = PROJECT_ROOT / "static"
@@ -32,6 +33,18 @@ TEMPLATE_PATH = TEMPLATE_DIR / "index.html"
 TEST_SIZE = 0.20            # 80% 训练 / 20% 测试
 RANDOM_STATE = 42           # 固定随机种子 -> 结果可复现
 STRATIFY = True             # 分层抽样：保证训练/测试集生还比例一致
+
+# ---------------------------------------------------------------------------
+# 深度学习(PyTorch MLP)超参数 —— 严格对齐课件第3次课 p.66
+# ---------------------------------------------------------------------------
+DL_SEED = 42                # 全局随机种子(固定 -> 可复现)
+DL_VAL_SIZE = 0.20          # 从训练集再切 20% 做验证集
+DL_BATCH_SIZE = 32          # 每个 batch 的样本数
+DL_LR = 0.001               # 学习率
+DL_DROPOUT = 0.2            # Dropout 比例
+DL_EPOCHS = 80              # 训练轮数
+DL_WEIGHT_DECAY = 1e-4      # Adam 权重衰减(L2 正则)
+DL_MODEL_NAME = "TitanicMLP"
 
 # ---------------------------------------------------------------------------
 # 数据列
@@ -62,5 +75,5 @@ FORM_COLS = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked"]
 
 def ensure_dirs() -> None:
     """创建所有需要写产物的目录(幂等，可重复调用)。"""
-    for d in (DATA_DIR, FIG_DIR, CSV_DIR, STATIC_DIR, TEMPLATE_DIR):
+    for d in (DATA_DIR, FIG_DIR, DL_FIG_DIR, CSV_DIR, STATIC_DIR, TEMPLATE_DIR):
         d.mkdir(parents=True, exist_ok=True)

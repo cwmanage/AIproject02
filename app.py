@@ -1,16 +1,22 @@
 """FastAPI 应用：泰坦尼克号生还预测演示 Web 应用。
 
-应用提供以下接口：
-    GET  /                    -> 交互演示页(图表 + 预测表单)
-    GET  /api/health          -> 服务健康检查
-    GET  /api/summary         -> 训练总结(四个模型的全部指标)
-    GET  /api/predictions     -> 测试集真实 vs 预测对照表
-    POST /api/predict         -> 预测单个乘客(JSON 请求体)
-    GET  /api/predict?..      -> 同样的预测，但用查询参数
+本应用展示**两种训练/建模方式**，顶部按钮可切换：
+    1. 机器学习  —— 四个传统模型(Logistic/SVM/DT/RF)，由 titanic/train.py 训练
+    2. 深度学习  —— PyTorch 多层感知机 MLP，由 titanic/deep_learning.py 训练
 
-所有图、CSV 和模型管道都由 `python -m titanic.train` 生成。应用启动时
-尝试从磁盘(outputs/ + models/)加载这些训练好的产物，可以立即响应、
-无需重新训练；如果缺失，则在第一次请求时懒加载训练一次(内存缓存)。
+应用提供以下接口：
+    GET  /                    -> 主页：深度学习(PyTorch MLP)页
+    GET  /ml                  -> 传统机器学习页(图表 + 预测表单)
+    GET  /deep                -> 兼容旧链接：307 重定向到主页 /
+    GET  /api/health          -> 服务健康检查
+    GET  /api/summary         -> 四个传统模型指标
+    GET  /api/predictions     -> 传统模型：测试集真实 vs 预测
+    POST /api/predict         -> 传统模型：预测单个乘客
+    GET  /api/predict?..      -> 传统模型：同上(查询参数)
+    GET  /api/dl/summary      -> MLP 指标 + 训练历史 + 超参数
+    GET  /api/dl/predictions  -> MLP：测试集真实 vs 预测
+    GET  /api/dl/predict?..   -> MLP：预测单个乘客
+    POST /api/dl/predict      -> MLP：预测单个乘客(JSON)
 
 运行方式:  uvicorn app:app --host 0.0.0.0 --port 8000
 """
@@ -20,13 +26,14 @@ from contextlib import asynccontextmanager
 import joblib
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from titanic import config
 from titanic import train as trainer
-from titanic.i18n import CHART_CAPTIONS, UI, pick as i18n_pick
+from titanic import deep_learning as dl
+from titanic.i18n import CHART_CAPTIONS, DL_CAPTIONS, UI, pick as i18n_pick
 from titanic.preprocessing import build_preprocessor, load_data, make_features
 
 # 四个模型的人类可读名称(id -> label)
@@ -93,6 +100,7 @@ app = FastAPI(
 # 托管静态资源(如果有 CSS)与生成的图表
 app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
 app.mount("/figures", StaticFiles(directory=config.FIG_DIR), name="figures")
+app.mount("/dl_figures", StaticFiles(directory=config.DL_FIG_DIR), name="dl_figures")
 
 templates = Jinja2Templates(directory=str(config.TEMPLATE_DIR))
 
@@ -161,8 +169,55 @@ def _validate_payload(payload: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request, lang: str = Query("en", pattern="^(en|zh)$")):
-    """渲染演示主页(图表、指标表、预测表单)。
+async def home(request: Request, lang: str = Query("en", pattern="^(en|zh)$")):
+    """主页：渲染深度学习(PyTorch MLP)页(训练曲线、指标、预测表单)。
+
+    ``?lang=en|zh`` 选择 UI 语言(默认 en)。顶部模式按钮可切到
+    机器学习页(/ml)。
+    """
+    meta = dl.get_meta()
+    charts = [
+        {
+            "file": name,
+            "url": f"/dl_figures/{name}",
+            "caption": DL_CAPTIONS.get(name.removesuffix(".png"), ("", ""))[
+                1 if lang == "zh" else 0
+            ],
+        }
+        for name in sorted(meta.get("figures", []))
+    ]
+
+    def td(key: str) -> str:
+        return i18n_pick(key, lang)
+
+    return templates.TemplateResponse(
+        request,
+        "deep.html",
+        {
+            "lang": lang,
+            "t": td,
+            "charts": charts,
+            "metrics": meta.get("metrics", {}),
+            "history": meta.get("history", []),
+            "hyperparams": meta.get("hyperparams", {}),
+            "n_train": meta.get("n_train"),
+            "n_val": meta.get("n_val"),
+            "n_test": meta.get("n_test"),
+            "input_dim": meta.get("input_dim"),
+            "n_params": meta.get("n_params"),
+        },
+    )
+
+
+@app.get("/deep", include_in_schema=False)
+async def deep_redirect(lang: str = Query("en", pattern="^(en|zh)$")):
+    """兼容旧链接：/deep 是旧的深度学习页地址，现 307 重定向到主页 /。"""
+    return RedirectResponse(url=f"/?lang={lang}", status_code=307)
+
+
+@app.get("/ml", response_class=HTMLResponse)
+async def ml_page(request: Request, lang: str = Query("en", pattern="^(en|zh)$")):
+    """传统机器学习页：图表、四模型指标表、预测表单。
 
     ``?lang=en|zh`` 选择 UI 语言(默认 en)。图表本身是双语 PNG，
     两种语言都能用。选择结果由页面存在 localStorage，每次跳转带上。
@@ -295,6 +350,77 @@ async def predict_get(request: Request):
     if embarked not in ("C", "Q", "S"):
         raise HTTPException(status_code=400, detail="Embarked must be 'C', 'Q' or 'S'.")
     return _predict_from_row(row, model_raw)
+
+
+# ---------------------------------------------------------------------------
+# 深度学习(PyTorch MLP)路由 —— 主页 / ；顶部按钮在 /ml 与 / 间切换
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dl/summary")
+async def dl_summary():
+    """MLP 训练总结：指标 + 超参数 + 训练历史。"""
+    return JSONResponse(dl.get_meta())
+
+
+@app.get("/api/dl/predictions")
+async def dl_predictions():
+    """MLP 在测试集上的真实 vs 预测明细。"""
+    meta = dl.get_meta()
+    table = pd.DataFrame({
+        "PassengerId": meta["test_ids"],
+        "Survived_true": meta["y_test"],
+        "Survived_pred": meta["y_pred"],
+        "Survived_prob": meta["y_prob"],
+    })
+    table["Correct"] = (table["Survived_true"] == table["Survived_pred"]).astype(int)
+    return JSONResponse(table.to_dict(orient="records"))
+
+
+@app.post("/api/dl/predict")
+async def dl_predict_post(payload: dict):
+    """用 MLP 预测单个乘客(JSON 请求体)。"""
+    row = _validate_payload(payload)
+    return dl.predict_one(row)
+
+
+@app.get("/api/dl/predict")
+async def dl_predict_get(request: Request):
+    """用 MLP 预测单个乘客(查询参数，与表单字段大小写无关)。"""
+    q = request.query_params
+
+    def pick(*names, default=None):
+        for n in names:
+            if n in q:
+                return q[n]
+        return default
+
+    try:
+        pclass_raw = pick("pclass", "Pclass")
+        sex_raw = pick("sex", "Sex")
+        age_raw = pick("age", "Age")
+        sibsp_raw = pick("sibsp", "SibSp")
+        parch_raw = pick("parch", "Parch")
+        fare_raw = pick("fare", "Fare")
+        embarked_raw = pick("embarked", "Embarked")
+        pclass = int(pclass_raw) if pclass_raw is not None else 3
+        sex = (sex_raw or "male").strip().lower()
+        age = float(age_raw) if age_raw is not None else 30.0
+        sibsp = int(sibsp_raw) if sibsp_raw is not None else 0
+        parch = int(parch_raw) if parch_raw is not None else 0
+        fare = float(fare_raw) if fare_raw is not None else 32.0
+        embarked = (embarked_raw or "S").strip().upper()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid number: {exc}") from exc
+
+    row = {"Pclass": pclass, "Sex": sex, "Age": age, "SibSp": sibsp,
+           "Parch": parch, "Fare": fare, "Embarked": embarked}
+    if pclass not in (1, 2, 3):
+        raise HTTPException(status_code=400, detail="Pclass must be 1, 2 or 3.")
+    if sex not in ("male", "female"):
+        raise HTTPException(status_code=400, detail="Sex must be 'male' or 'female'.")
+    if embarked not in ("C", "Q", "S"):
+        raise HTTPException(status_code=400, detail="Embarked must be 'C', 'Q' or 'S'.")
+    return dl.predict_one(row)
 
 
 # ---------------------------------------------------------------------------

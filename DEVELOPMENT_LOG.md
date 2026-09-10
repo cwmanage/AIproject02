@@ -1,7 +1,30 @@
 # 开发日志 — Titanic 乘客生还预测与数据可视化
 
-> 课程：机器学习 第02次课 统一案例
-> 最后更新：2026-09-03（双语版）
+> 课程：机器学习 第02次课 统一案例 + 深度学习 第03次课 PyTorch 神经网络
+> 最后更新：2026-09-10（双训练方式版：传统机器学习 + PyTorch 深度学习）
+
+---
+
+## 零、v2 增量（2026-09-10）：新增 PyTorch 深度学习训练方式
+
+在保持原四模型机器学习基础上，**新增一路 PyTorch MLP 训练流程**，两页顶部按钮切换：
+
+> **布局（2026-09-10 调整）**：**深度学习页现为网站主页 `/`**，机器学习页移至 `/ml`；旧链接 `/deep` 保留 307 重定向到主页。顶部按钮顺序为「机器学习」在前、「深度学习」在后，当前页高亮。
+
+- 新增 `titanic/deep_learning.py`：自包含 MLP 训练/评估/绘图/持久化（严格对齐第03次课课件）
+  - 网络：`Linear(12,64)→ReLU→Dropout(0.2)→Linear(64,32)→ReLU→Linear(32,2)`，2978 参数
+  - 损失/优化：`CrossEntropyLoss` + `Adam(lr=0.001, weight_decay=1e-4)`，batch=32，epochs=80，seed=42
+  - 划分：891 → 569 训练 / 143 验证 / 179 测试（**与传统模型共用同一 test 划分**，可直接横向对比）
+  - 产物：`outputs/dl_figures/`（6 图）、`outputs/csv/dl_metrics.csv` + `dl_training_history.csv` + `dl_test_predictions.csv`、`models/best_titanic_mlp.pt`
+- 实测指标：accuracy=0.8101 / precision=0.8571 / recall=0.6087 / f1=0.7119 / auc=0.8484（与课件 p.40 高度吻合，recall 略低）
+- **可复现性**：固定 torch/numpy/random 全局种子 + DataLoader generator 种子，连跑两次产物逐字节相同 ✓
+- 新增页面 `templates/deep.html`（顶部模式切换 + 训练曲线 + 指标卡 + MLP 实时预测 + 测试集表 + 网络结构/超参）
+- `app.py` 新增路由：`GET /`（深度学习主页）、`GET /ml`（机器学习页）、`GET /deep`（旧链接 307 → `/`）、`/api/dl/summary`、`/api/dl/predictions`、`GET|POST /api/dl/predict`；挂载 `/dl_figures` 静态目录
+- `titanic/i18n.py` 补 DL 页全部 UI 词条与图表 caption；`start.py` 新增 DL 产物检查与自动训练（`python -m titanic.deep_learning`）
+- `smoke_test.py` 扩展覆盖 `/ml` 与 `/`（深学主页）中英文页、`/deep` 重定向、DL 图表、DL 三个接口
+- 传统机器学习部分保持**原封不动**（AIproject01 未改动）
+
+> 版本一（融合版）位置：`D:\homework\AIproject02`；版本二（精简单文件版）位置：`D:\homework\titanic_pytorch`
 
 ---
 
@@ -144,9 +167,9 @@ D:\homework\AIproject01\
 ## 六、后续可选优化（不在本次范围）
 
 - 前端浏览器截图目视终验（策略限制未做，接口级验证已全通过）
-- 增加混淆矩阵/ROC 曲线图（课件未要求）
 - Docker 化部署（当前一键启动已覆盖本地演示需求）
 - 压缩包体积优化（剔除 outputs/models/.venv 已支持，首次启动自动重建）
+- MLP recall 略低于课件（0.609 vs 0.623）：可调阈值/类别权重，用户已确认不要求分毫不差
 
 ## 七、文档索引
 
